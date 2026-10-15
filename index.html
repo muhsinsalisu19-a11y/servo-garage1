@@ -1,0 +1,1297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Servo Garage</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: full-bleed 3D workshop; thin instrument bar on top, docked inspector and drive pads at the bottom. Single dark garage look on purpose. */
+:root {
+  --bg: #15191e;
+  --panel: rgba(21, 26, 32, 0.9);
+  --panel-solid: #1b2128;
+  --line: rgba(220, 230, 240, 0.1);
+  --fg: #e9edf1;
+  --muted: #8d98a5;
+  --amber: #ffb21e;
+  --amber-ink: #241a04;
+  --motor: #ff6b2c;
+  --teal: #3fc1ae;
+  --danger: #ff6a5f;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  --body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); overflow: hidden; -webkit-user-select: none; user-select: none; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; text-shadow: 0 1px 8px rgba(0,0,0,.6); }
+.brand b { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .06em; text-transform: uppercase; }
+.brand b span { color: var(--amber); }
+.brand small { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; backdrop-filter: blur(8px); }
+.seg button {
+  border: 0; background: transparent; padding: 7px 14px; border-radius: 7px;
+  font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.seg button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); }
+
+.btn {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 14px;
+  font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: .06em; text-transform: uppercase;
+  backdrop-filter: blur(8px);
+}
+.btn:hover { border-color: rgba(255,178,30,.5); }
+.btn.vr { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn.vr[disabled] { background: var(--panel); color: var(--muted); border-color: var(--line); cursor: default; }
+.btn.warn { color: var(--danger); border-color: rgba(255,106,95,.5); }
+
+.note {
+  position: fixed; z-index: 6; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  width: min(560px, calc(100% - 32px));
+  background: var(--panel-solid); border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.note b { font-family: var(--display); letter-spacing: .04em; font-size: 16px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+.note .x { float: right; border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 0 0 10px; }
+
+.dock {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+  pointer-events: none;
+}
+.dock > * { pointer-events: auto; }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(10px); }
+.help { padding: 12px 14px; max-width: 330px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.help h2 { font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg); margin: 0 0 6px; }
+.help ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.help kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.help .hide { float: right; border: 0; background: none; color: var(--muted); font-size: 12px; padding: 0; text-decoration: underline; }
+
+.inspector { padding: 12px 14px; min-width: 0; width: min(420px, 100%); display: grid; gap: 10px; }
+.insp-head { display: flex; align-items: baseline; gap: 8px; }
+.insp-head b { font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: .05em; text-transform: uppercase; }
+.insp-head small { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.tool {
+  border: 1px solid var(--line); background: rgba(255,255,255,.04); border-radius: 8px; padding: 7px 10px;
+  font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
+}
+.tool:hover { background: rgba(255,255,255,.09); }
+.tool kbd { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.tool.del { color: var(--danger); }
+.motor-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.motor-row label { font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--motor); }
+.motor-row select {
+  flex: 1; min-width: 160px; background: var(--panel-solid); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 8px; font: 500 14px var(--body);
+}
+
+.pad {
+  width: 128px; height: 128px; border-radius: 50%; position: relative; touch-action: none;
+  background: radial-gradient(circle, rgba(255,255,255,.03) 0 55%, rgba(255,255,255,.07) 56% 58%, transparent 59%), var(--panel);
+  border: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.pad .knob {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%;
+  background: var(--amber); box-shadow: 0 4px 14px rgba(0,0,0,.45); pointer-events: none;
+}
+.pad .tag { position: absolute; left: 0; right: 0; top: -22px; text-align: center; font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.run-hint { align-self: center; text-align: center; font-size: 13px; line-height: 1.5; color: var(--muted); padding: 10px 14px; max-width: 300px; }
+.run-hint b { color: var(--fg); font-weight: 600; }
+.run-hint kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+
+.toast {
+  position: fixed; z-index: 7; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 170px);
+  background: var(--fg); color: var(--bg); font-weight: 600; font-size: 14px; padding: 8px 14px; border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); transition: opacity .2s; white-space: nowrap;
+}
+
+.palette {
+  position: fixed; z-index: 5; left: max(16px, env(safe-area-inset-left, 0px)); top: 50%; transform: translateY(-50%);
+  display: grid; gap: 4px; padding: 8px; width: 150px;
+}
+.palette h2 { font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 2px 6px 4px; }
+.chip {
+  display: flex; align-items: center; gap: 9px; border: 1px solid transparent; background: transparent; border-radius: 8px;
+  padding: 6px 8px; font-size: 14px; font-weight: 500; text-align: left; touch-action: none; white-space: nowrap;
+}
+.chip:hover { background: rgba(255,255,255,.07); border-color: var(--line); }
+.chip:active { background: rgba(255,178,30,.15); }
+.sw { width: 18px; height: 12px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); }
+.sw.round { width: 14px; height: 14px; border-radius: 50%; margin: 0 2px; }
+
+@media (max-width: 640px) {
+  .palette {
+    top: calc(env(safe-area-inset-top, 0px) + 108px); transform: none; right: max(16px, env(safe-area-inset-right, 0px));
+    width: auto; display: flex; overflow-x: auto; padding: 6px; gap: 2px; scrollbar-width: none;
+  }
+  .palette h2 { display: none; }
+  .brand small { display: none; }
+  .help { display: none; }
+  .dock { justify-content: center; }
+  .pad { width: 112px; height: 112px; }
+  .run-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div id="stage"></div>
+
+<header class="topbar">
+  <div class="brand"><b>Servo <span>Garage</span></b><small>WebXR prototype · Quest 3 / 3S</small></div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button id="mBuild" aria-pressed="true">Build</button>
+    <button id="mRun" aria-pressed="false">Run</button>
+  </div>
+  <button id="vrBtn" class="btn vr">Enter VR</button>
+  <button id="resetBtn" class="btn">Reset</button>
+</header>
+
+<nav class="card palette" id="palette" aria-label="Parts">
+  <h2>Parts</h2>
+  <button class="chip" data-type="beam"><span class="sw" style="background:#b9c3cd"></span>Beam 300</button>
+  <button class="chip" data-type="short"><span class="sw" style="background:#b9c3cd;width:11px;margin-right:7px"></span>Beam 150</button>
+  <button class="chip" data-type="plate"><span class="sw" style="background:#2f6fd6"></span>Plate 200</button>
+  <button class="chip" data-type="block"><span class="sw" style="background:#d9533b;width:12px;margin-right:6px"></span>Block</button>
+  <button class="chip" data-type="wheel"><span class="sw round" style="background:radial-gradient(#ffb21e 0 40%,#1f2124 42%)"></span>Wheel</button>
+  <button class="chip" data-type="motor"><span class="sw" style="background:linear-gradient(90deg,#2a2e34 70%,#ff6b2c 70%)"></span>Servo motor</button>
+  <button class="chip" data-type="axle"><span class="sw" style="background:linear-gradient(90deg,#34504c 70%,#3fc1ae 70%)"></span>Free axle</button>
+  <button class="chip" data-type="anchor"><span class="sw" style="background:repeating-linear-gradient(45deg,#e0a21a 0 3px,#1c1d20 3px 6px)"></span>Floor anchor</button>
+</nav>
+
+<div id="vrNote" class="note" hidden>
+  <button class="x" id="vrNoteX" aria-label="Close">×</button>
+  <b>VR needs the standalone page</b>
+  <span id="vrNoteText">This preview runs inside a frame that blocks VR. Open the standalone copy of this page in the Meta Quest browser and the Enter VR button will work there.</span>
+</div>
+
+<div class="dock">
+  <section class="card help" id="help" aria-label="Controls">
+    <button class="hide" id="helpHide">hide</button>
+    <h2>Build controls</h2>
+    <ul>
+      <li>Drag a part from the list onto the floor or another part</li>
+      <li>Drop a wheel on a motor's orange face to mount it</li>
+      <li>Drag empty space to orbit · scroll or pinch to zoom</li>
+      <li><kbd>R</kbd> <kbd>T</kbd> rotate · <kbd>Q</kbd> <kbd>E</kbd> lower / raise · <kbd>Del</kbd> remove</li>
+      <li><kbd>Space</kbd> switch between Build and Run</li>
+    </ul>
+  </section>
+
+  <section class="card inspector" id="inspector" hidden aria-label="Selected part">
+    <div class="insp-head"><b id="inspName">Part</b><small id="inspPos"></small></div>
+    <div class="motor-row" id="motorRow" hidden>
+      <label for="chSel">Drives from</label>
+      <select id="chSel"></select>
+    </div>
+    <div class="tools">
+      <button class="tool" id="tRotY">Turn <kbd>R</kbd></button>
+      <button class="tool" id="tRotX">Tip <kbd>T</kbd></button>
+      <button class="tool" id="tDown">Lower <kbd>Q</kbd></button>
+      <button class="tool" id="tUp">Raise <kbd>E</kbd></button>
+      <button class="tool del" id="tDel">Remove <kbd>Del</kbd></button>
+    </div>
+  </section>
+
+  <div class="pad" id="padL" hidden><span class="tag">Left stick</span><div class="knob"></div></div>
+  <div class="card run-hint" id="runHint" hidden><b>Running.</b> Motors follow the sticks they're set to. Keys: <kbd>W</kbd><kbd>S</kbd> left ↕, <kbd>A</kbd><kbd>D</kbd> left ↔, <kbd>↑</kbd><kbd>↓</kbd> right ↕, <kbd>←</kbd><kbd>→</kbd> right ↔. Back to Build resets the robot.</div>
+  <div class="pad" id="padR" hidden><span class="tag">Right stick</span><div class="knob"></div></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+// ---------- constants ----------
+const GRID = 0.0125;          // snap step in metres
+const TOL = 0.006;            // contact tolerance
+const EPS = 0.004;            // minimum face overlap
+const MAX_SPEED = 9;          // motor rad/s at full stick
+const MOTOR_TORQUE = 2.5;
+const SAVE_KEY = 'servo-garage-build-v1';
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const AX = { X: V(1, 0, 0), Y: V(0, 1, 0), Z: V(0, 0, 1) };
+
+const TYPES = {
+  beam:   { name: 'Beam 300',     size: [0.30, 0.05, 0.05], density: 600 },
+  short:  { name: 'Beam 150',     size: [0.15, 0.05, 0.05], density: 600 },
+  plate:  { name: 'Plate 200',    size: [0.20, 0.025, 0.20], density: 600 },
+  block:  { name: 'Block',        size: [0.05, 0.05, 0.05], density: 900 },
+  wheel:  { name: 'Wheel Ø150',   size: [0.025, 0.15, 0.15], density: 800, radius: 0.075 },
+  motor:  { name: 'Servo motor',  size: [0.05, 0.05, 0.05], density: 3000, shaft: true, powered: true },
+  axle:   { name: 'Free axle',    size: [0.05, 0.05, 0.05], density: 2000, shaft: true },
+  anchor: { name: 'Floor anchor', size: [0.10, 0.025, 0.10], density: 2000, anchor: true },
+};
+const TRAY_ORDER = ['beam', 'short', 'plate', 'block', 'wheel', 'motor', 'axle', 'anchor'];
+
+const CH = [
+  { k: 'LY', s: 1,  t: 'Left stick ↕',          tag: 'LY' },
+  { k: 'LY', s: -1, t: 'Left stick ↕ reversed', tag: 'LY rev' },
+  { k: 'RY', s: 1,  t: 'Right stick ↕',          tag: 'RY' },
+  { k: 'RY', s: -1, t: 'Right stick ↕ reversed', tag: 'RY rev' },
+  { k: 'LX', s: 1,  t: 'Left stick ↔',          tag: 'LX' },
+  { k: 'LX', s: -1, t: 'Left stick ↔ reversed', tag: 'LX rev' },
+  { k: 'RX', s: 1,  t: 'Right stick ↔',          tag: 'RX' },
+  { k: 'RX', s: -1, t: 'Right stick ↔ reversed', tag: 'RX rev' },
+  { k: 'ON', s: 1,  t: 'Always on',              tag: 'ON' },
+  { k: 'ON', s: -1, t: 'Always on reversed',     tag: 'ON rev' },
+  { k: 'OFF', s: 0, t: 'Off (holds position)',   tag: 'OFF' },
+];
+
+// ---------- renderer / scene ----------
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1f25);
+scene.fog = new THREE.Fog(0x1a1f25, 5, 14);
+
+const rig = new THREE.Group();
+scene.add(rig);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.02, 60);
+camera.position.set(0.12, 0.78, -0.12);
+rig.add(camera);
+
+scene.add(new THREE.HemisphereLight(0xe4ecf5, 0x2b2620, 0.75));
+const sun = new THREE.DirectionalLight(0xfff4e6, 1.05);
+sun.position.set(1.2, 3.2, 1.0);
+sun.target.position.set(0.2, 0, -1);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -1.6, right: 1.6, top: 1.6, bottom: -1.6, near: 0.5, far: 7 });
+sun.shadow.bias = -0.0008;
+scene.add(sun, sun.target);
+const fill = new THREE.PointLight(0xffb36b, 0.35, 6);
+fill.position.set(-1.5, 1.6, -2.2);
+scene.add(fill);
+
+// floor: concrete with a 5 cm grid, 25 cm and 50 cm lines
+function floorTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 500;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3a3f45'; g.fillRect(0, 0, 500, 500);
+  for (let i = 0; i < 1400; i++) { // speckle
+    g.fillStyle = `rgba(${Math.random() < .5 ? '255,255,255' : '0,0,0'},${Math.random() * .05})`;
+    g.fillRect(Math.random() * 500, Math.random() * 500, 2, 2);
+  }
+  for (let i = 0; i <= 10; i++) {
+    const p = i * 50;
+    g.strokeStyle = i % 5 === 0 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.055)';
+    g.lineWidth = i % 5 === 0 ? 2 : 1;
+    g.beginPath(); g.moveTo(p, 0); g.lineTo(p, 500); g.moveTo(0, p); g.lineTo(500, p); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(48, 48); t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(24, 24),
+  new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.92, metalness: 0 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// hazard border around the build zone
+(function zone() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 8;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1d1f22'; g.fillRect(0, 0, 64, 8);
+  g.fillStyle = '#e0a21a';
+  for (let x = -8; x < 72; x += 16) { g.beginPath(); g.moveTo(x, 8); g.lineTo(x + 8, 0); g.lineTo(x + 16, 0); g.lineTo(x + 8, 8); g.fill(); }
+  const tex = new THREE.CanvasTexture(c); tex.wrapS = THREE.RepeatWrapping; tex.encoding = THREE.sRGBEncoding;
+  const W = 2.2, D = 1.5, cx = 0.25, cz = -1.15, w = 0.04;
+  const strip = (len, x, z, rot) => {
+    const t = tex.clone(); t.needsUpdate = true; t.repeat.set(len / 0.08, 1);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, w), new THREE.MeshStandardMaterial({ map: t, roughness: .8 }));
+    m.rotation.set(-Math.PI / 2, 0, rot); m.position.set(x, 0.001, z); m.receiveShadow = true; scene.add(m);
+  };
+  strip(W, cx, cz - D / 2, 0); strip(W, cx, cz + D / 2, 0);
+  strip(D, cx - W / 2, cz, Math.PI / 2); strip(D, cx + W / 2, cz, Math.PI / 2);
+})();
+
+// ---------- materials ----------
+const texCache = {};
+function holeTexture(base, hole, cols, rows) {
+  const key = base + hole + cols + 'x' + rows;
+  if (texCache[key]) return texCache[key];
+  const s = 64, c = document.createElement('canvas'); c.width = s * cols; c.height = s * rows;
+  const g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+    g.fillStyle = hole; g.beginPath(); g.arc(i * s + s / 2, j * s + s / 2, s * 0.19, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2; g.beginPath(); g.arc(i * s + s / 2, j * s + s / 2, s * 0.21, 0.6, 2.4); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return (texCache[key] = t);
+}
+function hazardTexture() {
+  if (texCache.hazard) return texCache.hazard;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#e0a21a'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#1c1d20';
+  for (let x = -128; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 128); g.lineTo(x + 16, 128); g.lineTo(x + 144, 0); g.lineTo(x + 128, 0); g.fill(); }
+  g.fillStyle = '#2a2d31'; g.fillRect(20, 20, 88, 88);
+  g.fillStyle = '#8f98a2';
+  [[36, 36], [92, 36], [36, 92], [92, 92]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill(); });
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  return (texCache.hazard = t);
+}
+const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.5, metalness: 0.1 }, o));
+const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x0b0d10, transparent: true, opacity: 0.45 });
+
+// ---------- part meshes ----------
+function buildMesh(type) {
+  const t = TYPES[type];
+  const g = new THREE.Group();
+  const mats = [];
+  const add = (geo, mat, edges, pos) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true; m.receiveShadow = true;
+    if (pos) m.position.copy(pos);
+    if (edges) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), EDGE_MAT));
+    g.add(m);
+    (Array.isArray(mat) ? mat : [mat]).forEach(x => mats.includes(x) || mats.push(x));
+    return m;
+  };
+  const [sx, sy, sz] = t.size;
+  if (type === 'beam' || type === 'short') {
+    const n = Math.round(sx / 0.05);
+    const side = std({ map: holeTexture('#b9c3cd', '#2b3138', n, 1), metalness: 0.55, roughness: 0.38 });
+    const end = std({ color: 0xa9b3bd, metalness: 0.55, roughness: 0.4 });
+    add(new THREE.BoxGeometry(sx, sy, sz), [end, end, side, side, side, side], true);
+  } else if (type === 'plate') {
+    const top = std({ map: holeTexture('#2f6fd6', '#0e1f3d', 4, 4), metalness: 0.35, roughness: 0.42 });
+    const rim = std({ color: 0x2a62bd, metalness: 0.35, roughness: 0.45 });
+    add(new THREE.BoxGeometry(sx, sy, sz), [rim, rim, top, top, rim, rim], true);
+  } else if (type === 'block') {
+    add(new THREE.BoxGeometry(sx, sy, sz), std({ color: 0xd9533b, roughness: 0.55 }), true);
+  } else if (type === 'wheel') {
+    const tire = new THREE.CylinderGeometry(t.radius, t.radius, sx, 28); tire.rotateZ(Math.PI / 2);
+    add(tire, std({ color: 0x1f2124, roughness: 0.9 }));
+    const hub = new THREE.CylinderGeometry(0.034, 0.034, sx + 0.003, 20); hub.rotateZ(Math.PI / 2);
+    add(hub, std({ color: 0xffb21e, metalness: 0.3, roughness: 0.4 }));
+    const mark = new THREE.BoxGeometry(sx + 0.004, 0.018, 0.008);
+    add(mark, std({ color: 0xf2f2f2, roughness: 0.6 }), false, V(0, 0.052, 0));
+  } else if (type === 'motor' || type === 'axle') {
+    const body = type === 'motor' ? 0x2a2e34 : 0x34504c;
+    const face = type === 'motor' ? 0xff6b2c : 0x3fc1ae;
+    add(new THREE.BoxGeometry(sx, sy, sz), std({ color: body, metalness: 0.45, roughness: 0.42 }), true);
+    add(new THREE.BoxGeometry(0.003, sy * 0.86, sz * 0.86), std({ color: face, roughness: 0.45, emissive: face, emissiveIntensity: 0.08 }), false, V(sx / 2 + 0.0015, 0, 0));
+    const shaft = new THREE.CylinderGeometry(0.008, 0.008, 0.025, 14); shaft.rotateZ(Math.PI / 2);
+    add(shaft, std({ color: 0xd8dde2, metalness: 0.85, roughness: 0.25 }), false, V(0.0375, 0, 0));
+  } else if (type === 'anchor') {
+    const top = std({ map: hazardTexture(), roughness: 0.6 });
+    const rim = std({ color: 0x2a2d31, roughness: 0.6, metalness: 0.3 });
+    add(new THREE.BoxGeometry(sx, sy, sz), [rim, rim, top, rim, rim, rim], true);
+  }
+  g.userData.mats = mats;
+  mats.forEach(m => { m.userData.baseEmissive = m.emissive.clone(); m.userData.baseIntensity = m.emissiveIntensity; });
+  return g;
+}
+
+function setGlow(part, color, intensity) {
+  part.obj.userData.mats.forEach(m => {
+    if (color == null) { m.emissive.copy(m.userData.baseEmissive); m.emissiveIntensity = m.userData.baseIntensity; }
+    else { m.emissive.setHex(color); m.emissiveIntensity = intensity; }
+  });
+}
+
+// ---------- geometry helpers ----------
+const _m4 = new THREE.Matrix4();
+function halfExt(type, q) {
+  const s = TYPES[type].size;
+  _m4.makeRotationFromQuaternion(q);
+  const e = _m4.elements;
+  return V(
+    Math.abs(e[0]) * s[0] / 2 + Math.abs(e[4]) * s[1] / 2 + Math.abs(e[8]) * s[2] / 2,
+    Math.abs(e[1]) * s[0] / 2 + Math.abs(e[5]) * s[1] / 2 + Math.abs(e[9]) * s[2] / 2,
+    Math.abs(e[2]) * s[0] / 2 + Math.abs(e[6]) * s[1] / 2 + Math.abs(e[10]) * s[2] / 2);
+}
+function aabb(p) {
+  const h = halfExt(p.type, p.obj.quaternion);
+  return { min: p.obj.position.clone().sub(h), max: p.obj.position.clone().add(h) };
+}
+const shaftAxis = (p) => AX.X.clone().applyQuaternion(p.obj.quaternion);
+const shaftTip = (p) => p.obj.position.clone().addScaledVector(shaftAxis(p), 0.05);
+const nearBox = (pt, b, tol) => ['x', 'y', 'z'].every(a => pt[a] >= b.min[a] - tol && pt[a] <= b.max[a] + tol);
+function touching(a, b) {
+  let faces = 0; const c = V(0, 0, 0);
+  for (const k of ['x', 'y', 'z']) {
+    const lo = Math.max(a.min[k], b.min[k]), hi = Math.min(a.max[k], b.max[k]);
+    const o = hi - lo;
+    if (o < -TOL) return null;
+    if (o > EPS) faces++;
+    c[k] = (lo + hi) / 2;
+  }
+  return faces >= 2 ? c : null;
+}
+function nearestAxis(v, exclude) {
+  let best = null, bd = -2;
+  for (const a of [AX.X, AX.Y, AX.Z]) for (const s of [1, -1]) {
+    if (exclude && Math.abs(a.dot(exclude)) > 0.5) continue;
+    const d = v.x * a.x * s + v.y * a.y * s + v.z * a.z * s;
+    if (d > bd) { bd = d; best = a.clone().multiplyScalar(s); }
+  }
+  return best;
+}
+function snapQuat(q) {
+  const x = V(0, 0, 0), y = V(0, 0, 0), z = V(0, 0, 0);
+  _m4.makeRotationFromQuaternion(q).extractBasis(x, y, z);
+  const ax = nearestAxis(x), ay = nearestAxis(y, ax), az = V(0, 0, 0).crossVectors(ax, ay);
+  _m4.makeBasis(ax, ay, az);
+  return new THREE.Quaternion().setFromRotationMatrix(_m4);
+}
+const snapN = (n) => Math.round(n / GRID) * GRID;
+const snapVec = (v) => v.set(snapN(v.x), snapN(v.y), snapN(v.z));
+
+// ---------- parts ----------
+let parts = [];
+let nextId = 1;
+
+function makeLabelSprite() {
+  const c = document.createElement('canvas'); c.width = 160; c.height = 56;
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(0.064, 0.0224, 1);
+  s.userData.canvas = c;
+  return s;
+}
+function drawLabel(p) {
+  const c = p.label.userData.canvas, g = c.getContext('2d');
+  const ch = CH[p.ch] || CH[0];
+  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = 'rgba(18,21,26,.88)';
+  roundRect(g, 2, 2, c.width - 4, c.height - 4, 12); g.fill();
+  g.fillStyle = ch.k === 'OFF' ? '#8d98a5' : '#ff8a4c';
+  g.font = '600 30px "Barlow Condensed", "Arial Narrow", sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(ch.tag, c.width / 2, c.height / 2 + 1);
+  p.label.material.map.needsUpdate = true;
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+
+function addPart(type, pos, quat, ch) {
+  const obj = buildMesh(type);
+  obj.position.copy(pos); obj.quaternion.copy(quat || new THREE.Quaternion());
+  scene.add(obj);
+  const p = { id: nextId++, type, obj, ch: TYPES[type].powered ? (ch ?? 0) : -1 };
+  obj.traverse(o => { o.userData.part = p; });
+  if (TYPES[type].powered) { p.label = makeLabelSprite(); scene.add(p.label); drawLabel(p); }
+  parts.push(p);
+  return p;
+}
+function disposeObj(obj) {
+  obj.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  (obj.userData.mats || []).forEach(m => m.dispose());
+}
+function removePart(p) {
+  scene.remove(p.obj); disposeObj(p.obj);
+  if (p.label) { scene.remove(p.label); p.label.material.map.dispose(); p.label.material.dispose(); }
+  parts = parts.filter(x => x !== p);
+  if (selected === p) select(null);
+  hands.forEach(h => { if (h.grab && h.grab.part === p) h.grab = null; });
+}
+function clearParts() { [...parts].forEach(removePart); }
+
+// ---------- links (welds + shaft joints) ----------
+let links = [];
+const markers = new THREE.Group();
+scene.add(markers);
+const WELD_GEO = new THREE.SphereGeometry(0.0055, 10, 8);
+const WELD_MAT = new THREE.MeshBasicMaterial({ color: 0xf4f6f8 });
+const RING_GEO = new THREE.TorusGeometry(0.016, 0.0028, 8, 24);
+const RING_MOTOR = new THREE.MeshBasicMaterial({ color: 0xff6b2c });
+const RING_AXLE = new THREE.MeshBasicMaterial({ color: 0x3fc1ae });
+
+function relink() {
+  links = [];
+  const boxes = new Map(parts.map(p => [p, aabb(p)]));
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const A = parts[i], B = parts[j];
+    let joint = null;
+    for (const [S, O] of [[A, B], [B, A]]) {
+      if (!TYPES[S.type].shaft) continue;
+      const tip = shaftTip(S);
+      if (nearBox(tip, boxes.get(O), TOL)) { joint = { kind: 'joint', shaft: S, other: O, tip, axis: shaftAxis(S) }; break; }
+    }
+    if (joint) { links.push(joint); continue; }
+    const c = touching(boxes.get(A), boxes.get(B));
+    if (c) links.push({ kind: 'weld', a: A, b: B, point: c });
+  }
+  // markers
+  markers.clear();
+  for (const l of links) {
+    if (l.kind === 'weld') {
+      const m = new THREE.Mesh(WELD_GEO, WELD_MAT); m.position.copy(l.point); markers.add(m);
+    } else {
+      const m = new THREE.Mesh(RING_GEO, TYPES[l.shaft.type].powered ? RING_MOTOR : RING_AXLE);
+      m.position.copy(l.tip).addScaledVector(l.axis, -0.004);
+      m.quaternion.setFromUnitVectors(AX.Z, l.axis);
+      markers.add(m);
+    }
+  }
+}
+
+// ---------- tray (parts bin) ----------
+const tray = new THREE.Group();
+tray.position.set(-0.05, 0.86, -0.52);
+tray.rotation.x = 0.32;
+scene.add(tray);
+tray.visible = false; // the 3D tray is for VR; desktop and phone use the parts list
+const TRAY_W = 1.18, TRAY_D = 0.26;
+(function buildTray() {
+  const board = new THREE.Mesh(new THREE.BoxGeometry(TRAY_W, 0.02, TRAY_D), std({ color: 0x2c3138, roughness: 0.7, metalness: 0.2 }));
+  board.receiveShadow = true; board.castShadow = true; tray.add(board);
+  const lip = std({ color: 0xffb21e, roughness: 0.5 });
+  const front = new THREE.Mesh(new THREE.BoxGeometry(TRAY_W, 0.04, 0.012), lip); front.position.set(0, 0.02, TRAY_D / 2); tray.add(front);
+  const back = front.clone(); back.position.z = -TRAY_D / 2; tray.add(back);
+  // legs
+  const legMat = std({ color: 0x22262b, metalness: 0.5 });
+  for (const x of [-TRAY_W / 2 + 0.04, TRAY_W / 2 - 0.04]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 0.03), legMat);
+    leg.position.set(x, -0.45, 0); leg.castShadow = true; tray.add(leg);
+  }
+  // label strip
+  const c = document.createElement('canvas'); c.width = 1180; c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1a1e23'; g.fillRect(0, 0, c.width, c.height);
+  g.font = '600 26px "Barlow Condensed", "Arial Narrow", sans-serif'; g.fillStyle = '#c9d1d9'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  TRAY_ORDER.forEach((t, i) => g.fillText(TYPES[t].name.toUpperCase(), (i + 0.5) * c.width / TRAY_ORDER.length, 25));
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(TRAY_W, TRAY_W * 48 / 1180), new THREE.MeshBasicMaterial({ map: tex }));
+  strip.position.set(0, 0.0105, TRAY_D / 2 - 0.03); strip.rotation.x = -Math.PI / 2; tray.add(strip);
+})();
+const templates = [];
+TRAY_ORDER.forEach((type, i) => {
+  const obj = buildMesh(type);
+  const x = -TRAY_W / 2 + (i + 0.5) * TRAY_W / TRAY_ORDER.length;
+  if (type === 'beam' || type === 'short') obj.rotation.y = Math.PI / 2;
+  if (type === 'motor' || type === 'axle') obj.rotation.y = -Math.PI / 2; // face the player
+  const hh = halfExt(type, obj.quaternion);
+  obj.position.set(x, 0.01 + hh.y + 0.004, -0.02);
+  obj.traverse(o => { o.userData.template = type; });
+  tray.add(obj);
+  templates.push(obj);
+});
+function inTray(worldPos) {
+  const local = tray.worldToLocal(worldPos.clone());
+  return Math.abs(local.x) < TRAY_W / 2 && Math.abs(local.z) < TRAY_D / 2 + 0.04 && local.y > -0.06 && local.y < 0.2;
+}
+
+// ---------- example robot ----------
+function loadExample() {
+  clearParts();
+  const flip = new THREE.Quaternion().setFromAxisAngle(AX.Y, Math.PI);   // shaft to -X
+  const up = new THREE.Quaternion().setFromAxisAngle(AX.Z, Math.PI / 2); // shaft to +Y
+  const I = new THREE.Quaternion();
+  // tank-drive rover: left wheels on left stick, right wheels on right stick (reversed, as they face the other way)
+  addPart('plate', V(0, 0.1125, -1.0), I);
+  for (const z of [-1.0875, -0.9125]) {
+    addPart('motor', V(-0.075, 0.075, z), flip, 0);
+    addPart('wheel', V(-0.1375, 0.075, z), I);
+    addPart('motor', V(0.075, 0.075, z), I, 3);
+    addPart('wheel', V(0.1375, 0.075, z), I);
+  }
+  // turntable arm bolted to the floor, spun by the right stick ↔
+  addPart('anchor', V(0.6, 0.0125, -1.0), I);
+  addPart('motor', V(0.6, 0.05, -1.0), up, 6);
+  addPart('beam', V(0.7, 0.125, -1.0), I);
+  addPart('block', V(0.825, 0.175, -1.0), I);
+  relink();
+}
+
+// ---------- persistence (this browser only) ----------
+const r4 = (n) => Math.round(n * 10000) / 10000;
+function save() {
+  if (mode !== 'build') return;
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(parts.map(p => ({
+      t: p.type, p: p.obj.position.toArray().map(r4), q: p.obj.quaternion.toArray().map(r4), c: p.ch,
+    }))));
+  } catch (e) { /* storage unavailable: fine */ }
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (!Array.isArray(s) || !s.length) return false;
+    clearParts();
+    s.forEach(d => { if (TYPES[d.t]) addPart(d.t, V(...d.p), new THREE.Quaternion(...d.q), d.c); });
+    relink();
+    return parts.length > 0;
+  } catch (e) { return false; }
+}
+
+// ---------- physics (run mode) ----------
+let mode = 'build';
+let world = null, drives = [], snapshot = [], bodyOf = new Map();
+
+function startRun() {
+  relink();
+  snapshot = parts.map(p => ({ p, pos: p.obj.position.clone(), q: p.obj.quaternion.clone() }));
+  world = new CANNON.World();
+  world.gravity.set(0, -9.82, 0);
+  world.broadphase = new CANNON.NaiveBroadphase();
+  world.solver.iterations = 25;
+  world.defaultContactMaterial.friction = 0.8;
+  world.defaultContactMaterial.restitution = 0;
+  world.defaultContactMaterial.contactEquationStiffness = 5e6;
+  world.defaultContactMaterial.contactEquationRelaxation = 3;
+  const floor = new CANNON.Body({ mass: 0 });
+  floor.addShape(new CANNON.Plane());
+  floor.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+  world.addBody(floor);
+
+  // union-find over welds
+  const parent = new Map(parts.map(p => [p, p]));
+  const find = (p) => { while (parent.get(p) !== p) { parent.set(p, parent.get(parent.get(p))); p = parent.get(p); } return p; };
+  links.filter(l => l.kind === 'weld').forEach(l => parent.set(find(l.a), find(l.b)));
+  const groups = new Map();
+  parts.forEach(p => { const r = find(p); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+
+  bodyOf = new Map();
+  const v3 = (v) => new CANNON.Vec3(v.x, v.y, v.z);
+  for (const members of groups.values()) {
+    let M = 0; const com = V(0, 0, 0); let anchored = false;
+    const masses = members.map(p => {
+      const t = TYPES[p.type];
+      const vol = p.type === 'wheel' ? Math.PI * t.radius * t.radius * t.size[0] : t.size[0] * t.size[1] * t.size[2];
+      if (t.anchor) anchored = true;
+      return Math.max(0.04, vol * t.density);
+    });
+    members.forEach((p, i) => { M += masses[i]; com.addScaledVector(p.obj.position, masses[i]); });
+    com.multiplyScalar(1 / M);
+    const body = new CANNON.Body({ mass: anchored ? 0 : M });
+    body.position.copy(v3(com));
+    body.linearDamping = 0.05; body.angularDamping = 0.12;
+    members.forEach(p => {
+      const off = p.obj.position.clone().sub(com);
+      const t = TYPES[p.type];
+      const shape = p.type === 'wheel' ? new CANNON.Sphere(t.radius)
+        : new CANNON.Box(new CANNON.Vec3(t.size[0] / 2, t.size[1] / 2, t.size[2] / 2));
+      const q = p.obj.quaternion;
+      body.addShape(shape, v3(off), new CANNON.Quaternion(q.x, q.y, q.z, q.w));
+      bodyOf.set(p, { body, off, q: q.clone() });
+    });
+    body.updateMassProperties();
+    world.addBody(body);
+  }
+
+  drives = [];
+  for (const l of links.filter(l => l.kind === 'joint')) {
+    const A = bodyOf.get(l.shaft).body, B = bodyOf.get(l.other).body;
+    if (A === B || (A.mass === 0 && B.mass === 0)) continue;
+    const pa = l.tip.clone().sub(A.position), pb = l.tip.clone().sub(B.position);
+    const c = new CANNON.HingeConstraint(A, B, {
+      pivotA: v3(pa), axisA: v3(l.axis), pivotB: v3(pb), axisB: v3(l.axis), maxForce: 1e4,
+    });
+    c.collideConnected = false;
+    world.addConstraint(c);
+    if (TYPES[l.shaft.type].powered) {
+      c.enableMotor(); c.setMotorMaxForce(MOTOR_TORQUE); c.setMotorSpeed(0);
+      drives.push({ c, part: l.shaft });
+    }
+  }
+}
+function stopRun() {
+  world = null; drives = []; bodyOf = new Map();
+  snapshot.forEach(s => { if (parts.includes(s.p)) { s.p.obj.position.copy(s.pos); s.p.obj.quaternion.copy(s.q); } });
+  relink();
+}
+const _q = new THREE.Quaternion(), _v = V(0, 0, 0);
+function stepPhysics(dt, input) {
+  for (const d of drives) {
+    const ch = CH[d.part.ch] || CH[10];
+    const v = ch.k === 'ON' ? 1 : ch.k === 'OFF' ? 0 : input[ch.k];
+    // cannon spins body B the opposite way to the shaft axis; flip so + means right-hand around the shaft
+    d.c.setMotorSpeed(-v * ch.s * MAX_SPEED);
+  }
+  world.step(1 / 120, Math.min(dt, 0.05), 6);
+  bodyOf.forEach((b, p) => {
+    const bq = b.body.quaternion, bp = b.body.position;
+    _q.set(bq.x, bq.y, bq.z, bq.w);
+    _v.copy(b.off).applyQuaternion(_q);
+    p.obj.position.set(bp.x + _v.x, bp.y + _v.y, bp.z + _v.z);
+    p.obj.quaternion.copy(_q).multiply(b.q);
+  });
+}
+
+function setMode(m) {
+  if (m === mode) return;
+  hands.forEach(h => { if (h.grab) endGrab(h, true); });
+  if (m === 'run') { select(null); mode = 'run'; markers.visible = false; startRun(); }
+  else { mode = 'build'; stopRun(); markers.visible = true; }
+  document.getElementById('mBuild').setAttribute('aria-pressed', String(mode === 'build'));
+  document.getElementById('mRun').setAttribute('aria-pressed', String(mode === 'run'));
+  ['padL', 'padR', 'runHint'].forEach(id => { document.getElementById(id).hidden = mode !== 'run'; });
+  palette.hidden = mode !== 'build';
+  document.getElementById('help').hidden = mode !== 'build' || helpHidden;
+  updateInspector();
+  toast(mode === 'run' ? 'Run mode: physics on' : 'Build mode: robot reset');
+}
+
+// ---------- input ----------
+const keys = new Set();
+const padVal = { L: { x: 0, y: 0 }, R: { x: 0, y: 0 } };
+function gatherInput() {
+  const k = (a, b) => (keys.has(a) ? 1 : 0) - (keys.has(b) ? 1 : 0);
+  const inp = {
+    LY: k('KeyW', 'KeyS') + padVal.L.y, LX: k('KeyD', 'KeyA') + padVal.L.x,
+    RY: k('ArrowUp', 'ArrowDown') + padVal.R.y, RX: k('ArrowRight', 'ArrowLeft') + padVal.R.x,
+  };
+  for (const h of hands) {
+    if (!h.gp || !h.hand) continue;
+    const ax = h.gp.axes;
+    const x = dz(ax[2] || 0), y = -dz(ax[3] || 0);
+    if (h.hand === 'left') { inp.LX += x; inp.LY += y; } else { inp.RX += x; inp.RY += y; }
+  }
+  for (const key in inp) inp[key] = Math.max(-1, Math.min(1, inp[key]));
+  return inp;
+}
+const dz = (v) => Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85;
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
+  if (e.code === 'Space') { e.preventDefault(); setMode(mode === 'build' ? 'run' : 'build'); return; }
+  if (mode === 'run') {
+    if (e.code.startsWith('Arrow')) e.preventDefault();
+    keys.add(e.code); return;
+  }
+  if (!selected) return;
+  if (e.code === 'KeyR') rotateSel(AX.Y);
+  else if (e.code === 'KeyT') rotateSel(AX.X);
+  else if (e.code === 'KeyE') nudgeSel(0.025);
+  else if (e.code === 'KeyQ') nudgeSel(-0.025);
+  else if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); deleteSel(); }
+});
+window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+function bindPad(id, key) {
+  const el = document.getElementById(id), knob = el.querySelector('.knob');
+  let active = null;
+  const upd = (e) => {
+    const r = el.getBoundingClientRect();
+    let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    const len = Math.hypot(x, y); if (len > 1) { x /= len; y /= len; }
+    padVal[key] = { x, y: -y };
+    knob.style.transform = `translate(${x * r.width * 0.32}px, ${y * r.height * 0.32}px)`;
+  };
+  el.addEventListener('pointerdown', (e) => { active = e.pointerId; el.setPointerCapture(e.pointerId); upd(e); });
+  el.addEventListener('pointermove', (e) => { if (e.pointerId === active) upd(e); });
+  const end = (e) => { if (e.pointerId !== active) return; active = null; padVal[key] = { x: 0, y: 0 }; knob.style.transform = ''; };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
+bindPad('padL', 'L'); bindPad('padR', 'R');
+
+// ---------- desktop / touch building ----------
+const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 0.0005;
+const ndc = new THREE.Vector2();
+let selected = null, hovered = null;
+const drag = { id: null, part: null, startX: 0, startY: 0, active: false, spawned: false };
+
+function setNdc(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+}
+function partMeshes(except) {
+  const out = [];
+  parts.forEach(p => { if (p !== except) out.push(p.obj); });
+  return out;
+}
+function firstMeshHit(objs) {
+  return raycaster.intersectObjects(objs, true).find(h => h.object.isMesh) || null;
+}
+function pickAny() {
+  const hit = firstMeshHit(partMeshes());
+  if (!hit) return null;
+  return { part: hit.object.userData.part || null, template: hit.object.userData.template || null, hit };
+}
+
+// place a dragged part on whatever surface the ray hits
+function placeOnSurface(p) {
+  const hit = firstMeshHit([...partMeshes(p), ground]);
+  if (!hit) return;
+  let N = AX.Y.clone(), base = hit.point.clone(), mountOn = null;
+  if (hit.object !== ground) {
+    N = nearestAxis(hit.face.normal.clone().transformDirection(hit.object.matrixWorld));
+    const hp = hit.object.userData.part;
+    if (hp && TYPES[hp.type].shaft && N.dot(shaftAxis(hp)) > 0.9) { mountOn = hp; base = shaftTip(hp); }
+  }
+  if (mountOn && p.type === 'wheel') p.obj.quaternion.copy(snapQuat(new THREE.Quaternion().setFromUnitVectors(AX.X, N)));
+  const he = halfExt(p.type, p.obj.quaternion);
+  const along = Math.abs(N.x) * he.x + Math.abs(N.y) * he.y + Math.abs(N.z) * he.z;
+  const c = (mountOn && p.type === 'wheel') ? shaftTip(mountOn) : base.clone();
+  c.addScaledVector(N, along);
+  if (!(mountOn && p.type === 'wheel')) {
+    // keep the cursor point but snap; along the normal keep exact contact
+    for (const k of ['x', 'y', 'z']) if (Math.abs(N[k]) < 0.5) c[k] = snapN(base[k]);
+  }
+  snapVec(c);
+  if (c.y < he.y) c.y = snapN(he.y);
+  p.obj.position.copy(c);
+}
+
+const canvasEl = renderer.domElement;
+canvasEl.addEventListener('pointerdown', (e) => {
+  if (renderer.xr.isPresenting || mode !== 'build' || drag.id !== null) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  setNdc(e);
+  const pick = pickAny();
+  if (!pick) return;
+  controls.enabled = false;
+  drag.id = e.pointerId; drag.startX = e.clientX; drag.startY = e.clientY; drag.active = false; drag.spawned = false;
+  if (!pick.part) { controls.enabled = true; drag.id = null; return; }
+  drag.part = pick.part; select(pick.part);
+  try { canvasEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+});
+canvasEl.addEventListener('pointermove', (e) => {
+  if (renderer.xr.isPresenting) return;
+  if (drag.id === e.pointerId && drag.part) {
+    if (!drag.active && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 5) drag.active = true;
+    if (drag.active) { setNdc(e); placeOnSurface(drag.part); relink(); updateInspector(); }
+    return;
+  }
+  if (e.pointerType === 'mouse' && mode === 'build' && drag.id === null) {
+    setNdc(e);
+    const pick = pickAny();
+    setHover(pick ? pick.part : null);
+    canvasEl.style.cursor = pick ? 'grab' : '';
+  }
+});
+const endDrag = (e) => {
+  if (drag.id !== e.pointerId) return;
+  if (drag.part && drag.active) { relink(); save(); }
+  drag.id = null; drag.part = null; drag.active = false;
+  controls.enabled = true;
+};
+canvasEl.addEventListener('pointerup', endDrag);
+canvasEl.addEventListener('pointercancel', endDrag);
+
+// parts palette (desktop / phone): press to drop a part mid-screen, drag to place it
+const palette = document.getElementById('palette');
+palette.addEventListener('pointerdown', (e) => {
+  const btn = e.target.closest('.chip');
+  if (!btn || mode !== 'build' || drag.id !== null) return;
+  e.preventDefault();
+  const p = addPart(btn.dataset.type, V(0.25, 0.3, -1), new THREE.Quaternion(), 0);
+  if (p.type === 'motor' || p.type === 'axle') p.obj.quaternion.setFromAxisAngle(AX.Y, Math.PI / 2);
+  ndc.set(0, -0.1); raycaster.setFromCamera(ndc, camera);
+  placeOnSurface(p); relink(); select(p);
+  drag.id = e.pointerId; drag.part = p; drag.startX = e.clientX; drag.startY = e.clientY; drag.active = false;
+  try { btn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+});
+palette.addEventListener('pointermove', (e) => {
+  if (drag.id !== e.pointerId || !drag.part) return;
+  if (!drag.active && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 8) drag.active = true;
+  if (!drag.active) return;
+  const r = palette.getBoundingClientRect();
+  const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  if (over) return;
+  setNdc(e); placeOnSurface(drag.part); relink(); updateInspector();
+});
+const endPalette = (e) => {
+  if (drag.id !== e.pointerId) return;
+  if (drag.part) { relink(); save(); updateInspector(); }
+  drag.id = null; drag.part = null; drag.active = false;
+};
+palette.addEventListener('pointerup', endPalette);
+palette.addEventListener('pointercancel', endPalette);
+
+function setHover(p) {
+  if (hovered === p) return;
+  if (hovered && hovered !== selected) setGlow(hovered, null);
+  hovered = p;
+  if (hovered && hovered !== selected) setGlow(hovered, 0x4a5563, 0.35);
+}
+function select(p) {
+  if (selected && parts.includes(selected)) setGlow(selected, null);
+  selected = p;
+  if (selected) setGlow(selected, 0xffb21e, 0.28);
+  updateInspector();
+}
+function rotateSel(axis) {
+  if (!selected || mode !== 'build') return;
+  const q = new THREE.Quaternion().setFromAxisAngle(axis, Math.PI / 2);
+  selected.obj.quaternion.premultiply(q);
+  selected.obj.quaternion.copy(snapQuat(selected.obj.quaternion));
+  snapVec(selected.obj.position);
+  const he = halfExt(selected.type, selected.obj.quaternion);
+  if (selected.obj.position.y < he.y) selected.obj.position.y = snapN(he.y);
+  relink(); save(); updateInspector();
+}
+function nudgeSel(dy) {
+  if (!selected || mode !== 'build') return;
+  const he = halfExt(selected.type, selected.obj.quaternion);
+  selected.obj.position.y = Math.max(snapN(he.y), snapN(selected.obj.position.y + dy));
+  relink(); save(); updateInspector();
+}
+function deleteSel() {
+  if (!selected || mode !== 'build') return;
+  removePart(selected); relink(); save();
+}
+
+// ---------- inspector ----------
+const chSel = document.getElementById('chSel');
+CH.forEach((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = c.t; chSel.appendChild(o); });
+chSel.addEventListener('change', () => {
+  if (!selected || !TYPES[selected.type].powered) return;
+  selected.ch = Number(chSel.value); drawLabel(selected); save();
+});
+function updateInspector() {
+  const el = document.getElementById('inspector');
+  const show = !!selected && mode === 'build' && !renderer.xr.isPresenting;
+  el.hidden = !show;
+  if (!show) return;
+  document.getElementById('inspName').textContent = TYPES[selected.type].name;
+  const p = selected.obj.position;
+  document.getElementById('inspPos').textContent = `x ${(p.x * 100).toFixed(1)}  y ${(p.y * 100).toFixed(1)}  z ${(p.z * 100).toFixed(1)} cm`;
+  const powered = !!TYPES[selected.type].powered;
+  document.getElementById('motorRow').hidden = !powered;
+  if (powered) chSel.value = String(selected.ch);
+}
+document.getElementById('tRotY').onclick = () => rotateSel(AX.Y);
+document.getElementById('tRotX').onclick = () => rotateSel(AX.X);
+document.getElementById('tUp').onclick = () => nudgeSel(0.025);
+document.getElementById('tDown').onclick = () => nudgeSel(-0.025);
+document.getElementById('tDel').onclick = deleteSel;
+
+// ---------- top bar ----------
+document.getElementById('mBuild').onclick = () => setMode('build');
+document.getElementById('mRun').onclick = () => setMode('run');
+let resetArmed = 0;
+const resetBtn = document.getElementById('resetBtn');
+resetBtn.onclick = () => {
+  if (Date.now() - resetArmed < 3000) {
+    resetArmed = 0; resetBtn.textContent = 'Reset'; resetBtn.classList.remove('warn');
+    if (mode === 'run') setMode('build');
+    select(null); loadExample(); save(); toast('Example robot restored');
+  } else {
+    resetArmed = Date.now(); resetBtn.textContent = 'Tap again to reset'; resetBtn.classList.add('warn');
+    setTimeout(() => { if (Date.now() - resetArmed >= 2900) { resetBtn.textContent = 'Reset'; resetBtn.classList.remove('warn'); } }, 3000);
+  }
+};
+let helpHidden = false;
+try { helpHidden = localStorage.getItem('servo-garage-help') === 'hidden'; } catch (e) { /* ignore */ }
+document.getElementById('help').hidden = helpHidden;
+document.getElementById('helpHide').onclick = () => {
+  helpHidden = true; document.getElementById('help').hidden = true;
+  try { localStorage.setItem('servo-garage-help', 'hidden'); } catch (e) { /* ignore */ }
+};
+let toastTimer = 0;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.hidden = false; t.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.opacity = '0'; setTimeout(() => { t.hidden = true; }, 220); }, 1600);
+}
+
+// ---------- VR ----------
+const vrBtn = document.getElementById('vrBtn');
+const vrNote = document.getElementById('vrNote');
+document.getElementById('vrNoteX').onclick = () => { vrNote.hidden = true; };
+function showVrNote(text) {
+  if (text) document.getElementById('vrNoteText').textContent = text;
+  vrNote.hidden = false;
+}
+let xrSupported = false;
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-vr').then(ok => { xrSupported = ok; }).catch(() => { xrSupported = false; });
+}
+let deskCam = null;
+vrBtn.onclick = async () => {
+  if (renderer.xr.isPresenting) { renderer.xr.getSession().end(); return; }
+  if (!navigator.xr) {
+    showVrNote('This browser has no WebXR. Open the standalone page in the Meta Quest browser on your headset, then press Enter VR.');
+    return;
+  }
+  try {
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    deskCam = { pos: camera.position.clone(), q: camera.quaternion.clone(), target: controls.target.clone() };
+    controls.enabled = false;
+    rig.position.set(0, 0, 0); rig.quaternion.identity();
+    camera.position.set(0, 0, 0); camera.quaternion.identity();
+    select(null);
+    await renderer.xr.setSession(session);
+    tray.visible = true;
+    vrBtn.textContent = 'Exit VR';
+    session.addEventListener('end', () => {
+      vrBtn.textContent = 'Enter VR';
+      tray.visible = false;
+      rig.position.set(0, 0, 0); rig.quaternion.identity();
+      if (deskCam) { camera.position.copy(deskCam.pos); camera.quaternion.copy(deskCam.q); controls.target.copy(deskCam.target); }
+      controls.enabled = true; controls.update(); onResize();
+    });
+  } catch (err) {
+    showVrNote(xrSupported
+      ? 'The headset refused to start VR here, most likely because this preview runs inside a frame. Open the standalone page in the Quest browser and try again.'
+      : 'VR is not available in this view. Open the standalone page in the Meta Quest browser on your headset, then press Enter VR.');
+  }
+};
+
+const hands = [0, 1].map(i => {
+  const c = renderer.xr.getController(i);
+  rig.add(c);
+  const h = { i, c, hand: null, gp: null, hover: null, grab: null, prev: [], ghost: null, turned: false };
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.032, 0.11), std({ color: 0x30363e, roughness: 0.6 }));
+  handle.position.set(0, -0.01, 0.045); c.add(handle);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffb21e }));
+  c.add(tip);
+  const rayGeo = new THREE.BufferGeometry().setFromPoints([V(0, 0, 0), V(0, 0, -1)]);
+  h.ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xffb21e, transparent: true, opacity: 0.75 }));
+  c.add(h.ray);
+  h.dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  h.dot.visible = false; scene.add(h.dot);
+  c.visible = false;
+  c.addEventListener('connected', (e) => {
+    h.hand = e.data.handedness; h.gp = e.data.gamepad || null; c.visible = true;
+    if (h.hand === 'left') c.add(wrist);
+  });
+  c.addEventListener('disconnected', () => { h.hand = null; h.gp = null; c.visible = false; });
+  c.addEventListener('selectstart', () => beginGrab(h));
+  c.addEventListener('selectend', () => endGrab(h));
+  c.addEventListener('squeezestart', () => beginGrab(h));
+  c.addEventListener('squeezeend', () => endGrab(h));
+  return h;
+});
+
+// wrist panel (left controller)
+const wristCanvas = document.createElement('canvas'); wristCanvas.width = 512; wristCanvas.height = 320;
+const wristTex = new THREE.CanvasTexture(wristCanvas); wristTex.encoding = THREE.sRGBEncoding;
+const wrist = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.09375), new THREE.MeshBasicMaterial({ map: wristTex, transparent: true }));
+wrist.position.set(0, 0.06, 0.07); wrist.rotation.x = -Math.PI / 3.2;
+let wristText = '';
+function drawWrist(hoverText) {
+  const lines = mode === 'build'
+    ? ['Trigger or grip: grab · take parts from the tray', 'Drop a part back on the tray to remove it', 'B: change motor input · X: remove pointed part', 'Left stick: move · right stick: turn', 'A: run the robot']
+    : ['Sticks drive the motors set to them', 'Left wheels: left stick · right wheels: right stick', 'A: back to build (robot resets)'];
+  const key = mode + '|' + hoverText;
+  if (key === wristText) return;
+  wristText = key;
+  const g = wristCanvas.getContext('2d');
+  g.clearRect(0, 0, 512, 320);
+  g.fillStyle = 'rgba(18,21,26,.92)'; roundRect(g, 4, 4, 504, 312, 26); g.fill();
+  g.fillStyle = mode === 'build' ? '#ffb21e' : '#3fc1ae';
+  g.font = '700 46px "Barlow Condensed", "Arial Narrow", sans-serif';
+  g.fillText(mode === 'build' ? 'BUILD' : 'RUN', 28, 62);
+  g.fillStyle = '#e9edf1'; g.font = '600 30px "Barlow Condensed", "Arial Narrow", sans-serif';
+  g.fillText(hoverText || ' ', 150, 60);
+  g.fillStyle = '#9aa5b1'; g.font = '500 25px "Barlow", system-ui, sans-serif';
+  lines.forEach((l, i) => g.fillText(l, 28, 112 + i * 42));
+  wristTex.needsUpdate = true;
+}
+
+const _mat = new THREE.Matrix4(), _inv = new THREE.Matrix4();
+function controllerRay(h) {
+  _mat.identity().extractRotation(h.c.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(h.c.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
+  raycaster.far = 6;
+}
+function beginGrab(h) {
+  if (mode !== 'build' || h.grab || !h.hover) return;
+  let p = h.hover.part;
+  if (h.hover.template) {
+    const t = templates.find(o => o.userData.template === h.hover.template);
+    const wp = V(0, 0, 0), wq = new THREE.Quaternion();
+    t.getWorldPosition(wp); t.getWorldQuaternion(wq);
+    p = addPart(h.hover.template, wp.add(V(0, 0.04, 0)), wq, 0);
+  }
+  if (!p) return;
+  hands.forEach(o => { if (o !== h && o.grab && o.grab.part === p) dropGhost(o), o.grab = null; });
+  h.c.updateMatrixWorld();
+  h.grab = { part: p, offset: _inv.copy(h.c.matrixWorld).invert().multiply(p.obj.matrixWorld).clone() };
+  h.ghost = buildMesh(p.type);
+  h.ghost.traverse(o => { if (o.isMesh) { o.material = new THREE.MeshBasicMaterial({ color: 0xffb21e, transparent: true, opacity: 0.28, depthWrite: false }); o.castShadow = false; } if (o.isLineSegments) o.visible = false; });
+  scene.add(h.ghost);
+  pulse(h, 0.4, 30);
+}
+function dropGhost(h) { if (h.ghost) { scene.remove(h.ghost); disposeObj(h.ghost); h.ghost = null; } }
+function endGrab(h, silent) {
+  if (!h.grab) return;
+  const p = h.grab.part;
+  h.grab = null; dropGhost(h);
+  if (!parts.includes(p)) return;
+  if (!silent && inTray(p.obj.position)) { removePart(p); relink(); save(); pulse(h, 0.6, 40); return; }
+  p.obj.quaternion.copy(snapQuat(p.obj.quaternion));
+  snapVec(p.obj.position);
+  const he = halfExt(p.type, p.obj.quaternion);
+  if (p.obj.position.y < he.y) p.obj.position.y = snapN(he.y);
+  relink(); save(); pulse(h, 0.25, 20);
+}
+function pulse(h, s, ms) {
+  try { const a = h.gp && h.gp.hapticActuators && h.gp.hapticActuators[0]; if (a && a.pulse) a.pulse(s, ms); } catch (e) { /* ignore */ }
+}
+function pressed(h, idx) {
+  const b = h.gp && h.gp.buttons[idx];
+  const now = !!(b && b.pressed);
+  const was = !!h.prev[idx];
+  h.prev[idx] = now;
+  return now && !was;
+}
+function updateVR(dt) {
+  let hoverText = '';
+  for (const h of hands) {
+    if (!h.hand) continue;
+    h.c.updateMatrixWorld();
+    // buttons: 4 = A/X, 5 = B/Y on Quest controllers
+    if (h.hand === 'right' && pressed(h, 4)) setMode(mode === 'build' ? 'run' : 'build');
+    const sideBtn = pressed(h, 5);
+    const xBtn = h.hand === 'left' && pressed(h, 4);
+
+    if (h.grab) {
+      const ax = h.gp ? h.gp.axes : [];
+      const push = -dz(ax[3] || 0);
+      if (push) { const t = new THREE.Matrix4().makeTranslation(0, 0, -push * 0.6 * dt); h.grab.offset.premultiply(t); }
+      const m = new THREE.Matrix4().multiplyMatrices(h.c.matrixWorld, h.grab.offset);
+      m.decompose(h.grab.part.obj.position, h.grab.part.obj.quaternion, _v.set(1, 1, 1));
+      if (h.ghost) {
+        h.ghost.quaternion.copy(snapQuat(h.grab.part.obj.quaternion));
+        h.ghost.position.copy(h.grab.part.obj.position); snapVec(h.ghost.position);
+        h.ghost.visible = !inTray(h.grab.part.obj.position);
+      }
+      h.ray.scale.z = 0.05; h.dot.visible = false; h.hover = null;
+      hoverText = inTray(h.grab.part.obj.position) ? 'Release to remove' : TYPES[h.grab.part.type].name;
+      continue;
+    }
+    controllerRay(h);
+    const objs = mode === 'build' ? [...partMeshes(), ...templates] : partMeshes();
+    const hit = firstMeshHit(objs);
+    const prev = h.hover && h.hover.part;
+    h.hover = hit ? { part: hit.object.userData.part || null, template: hit.object.userData.template || null } : null;
+    h.ray.scale.z = hit ? hit.distance : 1.5;
+    h.dot.visible = !!hit; if (hit) h.dot.position.copy(hit.point);
+    const cur = h.hover && h.hover.part;
+    if (prev !== cur) { if (prev && parts.includes(prev)) setGlow(prev, null); }
+    if (cur && mode === 'build') setGlow(cur, h.hand === 'right' ? 0xffb21e : 0x3fc1ae, 0.3);
+    if (h.hover) {
+      const hp = h.hover.part;
+      if (hp) hoverText = TYPES[hp.type].name + (TYPES[hp.type].powered ? ' · ' + CH[hp.ch].tag : '');
+      else if (h.hover.template) hoverText = 'Take ' + TYPES[h.hover.template].name;
+    }
+    if (mode === 'build' && cur) {
+      if (sideBtn && TYPES[cur.type].powered) { cur.ch = (cur.ch + 1) % CH.length; drawLabel(cur); save(); pulse(h, 0.3, 20); }
+      if (xBtn) { removePart(cur); relink(); save(); pulse(h, 0.5, 30); h.hover = null; }
+    }
+  }
+  // locomotion in build mode
+  if (mode === 'build') {
+    const L = hands.find(h => h.hand === 'left' && !h.grab && h.gp);
+    const R = hands.find(h => h.hand === 'right' && !h.grab && h.gp);
+    if (L) {
+      const x = dz(L.gp.axes[2] || 0), y = dz(L.gp.axes[3] || 0);
+      if (x || y) {
+        const fwd = V(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(_q)); fwd.y = 0; fwd.normalize();
+        const right = V(0, 0, 0).crossVectors(fwd, AX.Y);
+        rig.position.addScaledVector(fwd, -y * 1.2 * dt).addScaledVector(right, x * 1.2 * dt);
+      }
+    }
+    if (R) {
+      const x = R.gp.axes[2] || 0;
+      if (Math.abs(x) > 0.7 && !R.turned) {
+        R.turned = true;
+        const ang = -Math.sign(x) * Math.PI / 6;
+        const cp = camera.getWorldPosition(V(0, 0, 0));
+        rig.position.sub(cp).applyAxisAngle(AX.Y, ang).add(cp);
+        rig.rotateY(ang);
+      } else if (Math.abs(x) < 0.3) R.turned = false;
+    }
+  }
+  drawWrist(hoverText);
+}
+
+// ---------- desktop camera ----------
+const controls = new THREE.OrbitControls(camera, canvasEl);
+controls.target.set(0.3, 0.08, -1.0);
+if ((stage.clientWidth || innerWidth) / (stage.clientHeight || innerHeight) < 0.8) camera.position.set(0.3, 1.25, 0.15);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.minDistance = 0.25; controls.maxDistance = 4.5; controls.maxPolarAngle = Math.PI * 0.49;
+controls.update();
+
+function onResize() {
+  const w = stage.clientWidth || window.innerWidth, h = stage.clientHeight || window.innerHeight;
+  if (renderer.xr.isPresenting) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.fov = camera.aspect < 0.8 ? 72 : 55;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+if (window.ResizeObserver) new ResizeObserver(onResize).observe(stage);
+onResize();
+
+// ---------- loop ----------
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (renderer.xr.isPresenting) updateVR(dt);
+  else controls.update();
+  if (mode === 'run' && world) stepPhysics(dt, gatherInput());
+  for (const p of parts) if (p.label) {
+    p.label.visible = true;
+    p.label.position.copy(p.obj.position); p.label.position.y += 0.058;
+  }
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(frame);
+
+// ---------- boot ----------
+if (!load()) { loadExample(); }
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { parts.forEach(p => p.label && drawLabel(p)); wristText = ''; });
+
+// handle for debugging from the console
+window.servoGarage = { get parts() { return parts; }, get links() { return links; }, get mode() { return mode; }, setMode, loadExample, camera, templates };
+})();
+</script>
+
+</body>
+</html>
